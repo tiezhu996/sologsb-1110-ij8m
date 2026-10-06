@@ -1,3 +1,5 @@
+import type { SyncMeta } from './sync';
+
 /** 灰胎髹漆遍次 */
 export interface LacquerLayer {
   id: string;
@@ -23,6 +25,12 @@ export interface LacquerLayer {
   operator: string;
   /** 备注 */
   remark?: string;
+  /** 离线合并同步元信息（旧备份可能缺失） */
+  rev?: SyncMeta['rev'];
+  updatedAt?: SyncMeta['updatedAt'];
+  summary?: SyncMeta['summary'];
+  deviceId?: SyncMeta['deviceId'];
+  demo?: SyncMeta['demo'];
 }
 
 /** 灰胎阶段常用配比 */

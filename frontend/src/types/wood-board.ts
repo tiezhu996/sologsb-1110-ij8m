@@ -1,3 +1,5 @@
+import type { SyncMeta } from './sync';
+
 /** 板材部位 */
 export type BoardPart = '面板' | '底板';
 
@@ -33,6 +35,12 @@ export interface WoodBoard {
   receivedAt: string;
   /** 备注 */
   remark?: string;
+  /** 离线合并同步元信息（旧备份可能缺失） */
+  rev?: SyncMeta['rev'];
+  updatedAt?: SyncMeta['updatedAt'];
+  summary?: SyncMeta['summary'];
+  deviceId?: SyncMeta['deviceId'];
+  demo?: SyncMeta['demo'];
 }
 
 export const BOARD_PARTS: BoardPart[] = ['面板', '底板'];

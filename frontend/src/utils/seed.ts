@@ -3,13 +3,29 @@ import type { WoodBoard } from '../types/wood-board';
 import type { SoundChamber } from '../types/sound-chamber';
 import type { LacquerLayer } from '../types/lacquer-layer';
 import type { Stringing } from '../types/stringing';
+import type { StageKey } from '../types/sync';
 import { cumulativeThickness } from './layer';
 
 const DAY = 86_400_000;
 const daysAgo = (n: number) => new Date(Date.now() - n * DAY).toISOString();
 
+/**
+ * 演示样例统一盖 demo 标记：
+ * 合并时带 demo 的入站记录永远不能覆盖正式记录（正式记录不能被演示样例改写）。
+ */
+function asDemo<T extends object>(stage: StageKey, atField: string, row: T): T {
+  const r = row as Record<string, unknown>;
+  return {
+    ...row,
+    rev: 1,
+    updatedAt: String(r[atField]),
+    summary: '演示样例初始数据',
+    demo: true,
+  } as T;
+}
+
 /** 示例琴坯：5 张琴、10 块板材 */
-export const SEED_BOARDS: WoodBoard[] = [
+const RAW_BOARDS: WoodBoard[] = [
   { id: 'board-001', boardNo: 'MB-2501', guqinNo: 'Q-2501', part: '面板', species: '桐木', dryYears: 8, thicknessMm: 32, grain: '直纹', defect: '无', receivedAt: daysAgo(120), remark: '河南兰考桐' },
   { id: 'board-002', boardNo: 'MB-2502', guqinNo: 'Q-2501', part: '底板', species: '梓木', dryYears: 6, thicknessMm: 18, grain: '直纹', defect: '无', receivedAt: daysAgo(118) },
   { id: 'board-003', boardNo: 'MB-2503', guqinNo: 'Q-2502', part: '面板', species: '杉木', dryYears: 12, thicknessMm: 30, grain: '水波纹', defect: '无', receivedAt: daysAgo(110), remark: '川杉，纹路佳' },
@@ -21,13 +37,15 @@ export const SEED_BOARDS: WoodBoard[] = [
   { id: 'board-009', boardNo: 'MB-2509', guqinNo: 'Q-2505', part: '面板', species: '桐木', dryYears: 2, thicknessMm: 29, grain: '直纹', defect: '裂纹', receivedAt: daysAgo(30), remark: '阴干不足且有裂纹，待退料' },
   { id: 'board-010', boardNo: 'MB-2510', guqinNo: 'Q-2505', part: '底板', species: '梓木', dryYears: 4, thicknessMm: 17, grain: '直纹', defect: '无', receivedAt: daysAgo(28) },
 ];
+export const SEED_BOARDS: WoodBoard[] = RAW_BOARDS.map((b) => asDemo('boards', 'receivedAt', b));
 
-export const SEED_CHAMBERS: SoundChamber[] = [
+const RAW_CHAMBERS: SoundChamber[] = [
   { id: 'chamber-001', guqinNo: 'Q-2501', nayinThickness: 16, longchiThickness: 14, fengzhaoThickness: 15, chamberDepth: 26, postPos: '天柱中', poolSize: '200×22', carvedAt: daysAgo(88), carver: '周砚秋', remark: '纳音略厚，出音偏沉' },
   { id: 'chamber-002', guqinNo: 'Q-2502', nayinThickness: 14, longchiThickness: 12, fengzhaoThickness: 13, chamberDepth: 28, postPos: '天柱偏左', poolSize: '210×24', carvedAt: daysAgo(76), carver: '周砚秋' },
   { id: 'chamber-003', guqinNo: 'Q-2503', nayinThickness: 15, longchiThickness: 13, fengzhaoThickness: 14, chamberDepth: 25, postPos: '天柱偏右', poolSize: '195×21', carvedAt: daysAgo(60), carver: '林听雪' },
   { id: 'chamber-004', guqinNo: 'Q-2504', nayinThickness: 17, longchiThickness: 15, fengzhaoThickness: 16, chamberDepth: 24, postPos: '天柱中', poolSize: '215×25', carvedAt: daysAgo(44), carver: '林听雪', remark: '老料槽腹留厚' },
 ];
+export const SEED_CHAMBERS: SoundChamber[] = RAW_CHAMBERS.map((c) => asDemo('chambers', 'carvedAt', c));
 
 function buildSeedLayers(): LacquerLayer[] {
   const plan: Array<[string, string, number, number, number, number, number, string]> = [
@@ -50,7 +68,7 @@ function buildSeedLayers(): LacquerLayer[] {
   return plan.map(([guqinNo, mixRatio, temp, humidity, grit, thickness, days, operator], index) => {
     const seq = (seqMap.get(guqinNo) ?? 0) + 1;
     seqMap.set(guqinNo, seq);
-    return {
+    return asDemo('lacquers', 'appliedAt', {
       id: `layer-${String(index + 1).padStart(3, '0')}`,
       guqinNo,
       seq,
@@ -62,7 +80,7 @@ function buildSeedLayers(): LacquerLayer[] {
       totalThickness: 0,
       appliedAt: daysAgo(days),
       operator,
-    };
+    });
   });
 }
 
@@ -80,7 +98,7 @@ export function withCumulative(layers: LacquerLayer[]): LacquerLayer[] {
   }));
 }
 
-export const SEED_STRINGINGS: Stringing[] = [
+const RAW_STRINGINGS: Stringing[] = [
   {
     id: 'stringing-001',
     guqinNo: 'Q-2501',
@@ -129,6 +147,7 @@ export const SEED_STRINGINGS: Stringing[] = [
     ],
   },
 ];
+export const SEED_STRINGINGS: Stringing[] = RAW_STRINGINGS.map((s) => asDemo('stringings', 'strungAt', s));
 
 /** 首次打开（表内无数据）时写入示例数据；已有数据则不动 */
 export async function seedIfEmpty(): Promise<void> {
@@ -144,11 +163,46 @@ export async function seedIfEmpty(): Promise<void> {
   ]);
   const layers = withCumulative(buildSeedLayers());
 
-  await db.transaction('rw', db.boards, db.chambers, db.lacquers, db.stringings, db.meta, async () => {
-    if (boardCount === 0) await db.boards.bulkPut(SEED_BOARDS);
-    if (chamberCount === 0) await db.chambers.bulkPut(SEED_CHAMBERS);
-    if (lacquerCount === 0) await db.lacquers.bulkPut(layers);
-    if (stringingCount === 0) await db.stringings.bulkPut(SEED_STRINGINGS);
+  await db.transaction(
+    'rw',
+    [db.boards, db.chambers, db.lacquers, db.stringings, db.changes, db.meta],
+    async () => {
+    if (boardCount === 0) {
+      await db.boards.bulkPut(SEED_BOARDS);
+      await db.changes.bulkPut(
+        SEED_BOARDS.map((b) => ({
+          id: b.id, stage: 'boards' as const, guqinNo: b.guqinNo, lastRev: 1,
+          lastAt: b.receivedAt, lastSummary: '演示样例初始数据', history: [],
+        })),
+      );
+    }
+    if (chamberCount === 0) {
+      await db.chambers.bulkPut(SEED_CHAMBERS);
+      await db.changes.bulkPut(
+        SEED_CHAMBERS.map((c) => ({
+          id: c.id, stage: 'chambers' as const, guqinNo: c.guqinNo, lastRev: 1,
+          lastAt: c.carvedAt, lastSummary: '演示样例初始数据', history: [],
+        })),
+      );
+    }
+    if (lacquerCount === 0) {
+      await db.lacquers.bulkPut(layers);
+      await db.changes.bulkPut(
+        layers.map((l) => ({
+          id: l.id, stage: 'lacquers' as const, guqinNo: l.guqinNo, lastRev: 1,
+          lastAt: l.appliedAt, lastSummary: '演示样例初始数据', history: [],
+        })),
+      );
+    }
+    if (stringingCount === 0) {
+      await db.stringings.bulkPut(SEED_STRINGINGS);
+      await db.changes.bulkPut(
+        SEED_STRINGINGS.map((s) => ({
+          id: s.id, stage: 'stringings' as const, guqinNo: s.guqinNo, lastRev: 1,
+          lastAt: s.strungAt, lastSummary: '演示样例初始数据', history: [],
+        })),
+      );
+    }
     await db.meta.put({ key: 'seeded', value: new Date().toISOString() });
   });
 }

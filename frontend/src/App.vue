@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { Download } from '@element-plus/icons-vue';
 import { seedIfEmpty } from './utils/seed';
@@ -11,6 +11,7 @@ import { useLacquerStore } from './stores/lacquerStore';
 import { useStringingStore } from './stores/stringingStore';
 
 const route = useRoute();
+const router = useRouter();
 const boardStore = useBoardStore();
 const chamberStore = useChamberStore();
 const lacquerStore = useLacquerStore();
@@ -31,7 +32,11 @@ onMounted(async () => {
 async function handleExport() {
   const json = await exportBackupJson();
   downloadText(`gbguqin-backup-${new Date().toISOString().slice(0, 10)}.json`, json);
-  ElMessage.success('已导出 IndexedDB 全量 JSON 备份');
+  ElMessage.success('已导出 IndexedDB 全量 JSON 备份（含四个工序阶段的变更摘要）');
+}
+
+function goMerge() {
+  router.push('/merge');
 }
 </script>
 
@@ -48,12 +53,16 @@ async function handleExport() {
         <el-menu-item index="/chambers">槽腹尺寸</el-menu-item>
         <el-menu-item index="/lacquer">灰胎髹漆</el-menu-item>
         <el-menu-item index="/stringing">上弦评价</el-menu-item>
+        <el-menu-item index="/merge">回坊合并</el-menu-item>
       </el-menu>
     </el-aside>
     <el-container>
       <el-header class="app-header">
         <span class="header-title">{{ (route.meta?.title as string) ?? '古琴斫制工序记录台' }}</span>
-        <el-button :icon="Download" @click="handleExport">导出备份</el-button>
+        <div class="header-actions">
+          <el-button @click="goMerge">回坊合并</el-button>
+          <el-button type="primary" :icon="Download" @click="handleExport">导出备份</el-button>
+        </div>
       </el-header>
       <el-main v-loading="!ready" element-loading-text="正在装载本地工序档案…" class="app-main">
         <router-view />
@@ -95,6 +104,10 @@ async function handleExport() {
 .header-title {
   font-weight: 600;
   color: #4a3728;
+}
+.header-actions {
+  display: flex;
+  gap: 8px;
 }
 .app-main {
   background: #f7f3ed;

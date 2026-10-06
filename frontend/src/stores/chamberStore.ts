@@ -1,7 +1,8 @@
 import { defineStore } from 'pinia';
-import { db } from '../utils/db';
+import { db, getDeviceId } from '../utils/db';
 import { uid } from '../utils/id';
 import { toPlain } from '../utils/plain';
+import { createSummary, diffSummary, normalizeSyncRow, recordChange, stampChange } from '../utils/sync';
 import type { PostPos, SoundChamber, ThicknessMark } from '../types/sound-chamber';
 
 export interface ChamberInput {
@@ -64,13 +65,15 @@ export const useChamberStore = defineStore('chamber', {
 
   actions: {
     async hydrate() {
-      this.chambers = await db.chambers.orderBy('carvedAt').reverse().toArray();
+      const rows = await db.chambers.orderBy('carvedAt').reverse().toArray();
+      this.chambers = rows.map((r) => normalizeSyncRow('chambers', r));
       this.hydrated = true;
     },
 
     /** 每张琴一份槽腹记录：存在则更新，不存在则新增 */
     async saveChamber(input: ChamberInput): Promise<SoundChamber> {
       const existed = this.chambers.find((c) => c.guqinNo === input.guqinNo);
+      const deviceId = await getDeviceId();
       const chamber: SoundChamber = {
         id: existed?.id ?? uid('chamber'),
         guqinNo: input.guqinNo.trim(),
@@ -84,10 +87,17 @@ export const useChamberStore = defineStore('chamber', {
         carver: input.carver.trim(),
         remark: input.remark?.trim() || undefined,
       };
+      const summary = existed
+        ? (diffSummary('chambers', existed as unknown as Record<string, unknown>, chamber as unknown as Record<string, unknown>)
+            ?? existed.summary
+            ?? '保存（内容无变化）')
+        : createSummary('chambers', chamber as unknown as Record<string, unknown>);
+      const rev = stampChange(chamber, existed, summary, deviceId);
       await db.chambers.put(toPlain(chamber));
+      await recordChange({ stage: 'chambers', id: chamber.id, guqinNo: chamber.guqinNo, rev, summary, deviceId });
       this.chambers = existed
-        ? this.chambers.map((c) => (c.id === chamber.id ? chamber : c))
-        : [chamber, ...this.chambers];
+        ? this.chambers.map((c) => (c.id === chamber.id ? normalizeSyncRow('chambers', chamber) : c))
+        : [normalizeSyncRow('chambers', chamber), ...this.chambers];
       return chamber;
     },
 

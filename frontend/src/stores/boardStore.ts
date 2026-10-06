@@ -1,8 +1,9 @@
 import { defineStore } from 'pinia';
-import { db } from '../utils/db';
+import { db, getDeviceId } from '../utils/db';
 import { uid } from '../utils/id';
 import { toPlain } from '../utils/plain';
 import { pairBoards, boardUsable } from '../utils/wood';
+import { createSummary, diffSummary, normalizeSyncRow, recordChange, stampChange } from '../utils/sync';
 import type { BoardPart, BoardPair, WoodBoard, WoodDefect, WoodGrain, WoodSpecies } from '../types/wood-board';
 
 export interface BoardInput {
@@ -46,11 +47,13 @@ export const useBoardStore = defineStore('board', {
 
   actions: {
     async hydrate() {
-      this.boards = await db.boards.orderBy('boardNo').toArray();
+      const rows = await db.boards.orderBy('boardNo').toArray();
+      this.boards = rows.map((r) => normalizeSyncRow('boards', r));
       this.hydrated = true;
     },
 
     async addBoard(input: BoardInput): Promise<WoodBoard> {
+      const deviceId = await getDeviceId();
       const board: WoodBoard = {
         id: uid('board'),
         boardNo: input.boardNo.trim(),
@@ -64,17 +67,26 @@ export const useBoardStore = defineStore('board', {
         receivedAt: input.receivedAt ?? new Date().toISOString(),
         remark: input.remark?.trim() || undefined,
       };
+      const summary = createSummary('boards', board as unknown as Record<string, unknown>);
+      const rev = stampChange(board, undefined, summary, deviceId);
       await db.boards.put(toPlain(board));
-      this.boards = [board, ...this.boards];
+      await recordChange({ stage: 'boards', id: board.id, guqinNo: board.guqinNo, rev, summary, deviceId });
+      this.boards = [normalizeSyncRow('boards', board), ...this.boards];
       return board;
     },
 
     async updateBoard(id: string, patch: Partial<BoardInput>) {
       const current = this.boards.find((b) => b.id === id);
       if (!current) return;
+      const deviceId = await getDeviceId();
       const next: WoodBoard = { ...current, ...patch };
+      const summary = diffSummary('boards', current as unknown as Record<string, unknown>, next as unknown as Record<string, unknown>)
+        ?? current.summary
+        ?? '保存（内容无变化）';
+      const rev = stampChange(next, current, summary, deviceId);
       await db.boards.put(toPlain(next));
-      this.boards = this.boards.map((b) => (b.id === id ? next : b));
+      await recordChange({ stage: 'boards', id, guqinNo: next.guqinNo, rev, summary, deviceId });
+      this.boards = this.boards.map((b) => (b.id === id ? normalizeSyncRow('boards', next) : b));
     },
 
     async removeBoard(id: string) {
@@ -88,11 +100,23 @@ export const useBoardStore = defineStore('board', {
       const base = this.boards.find((b) => b.id === baseId);
       if (!panel || !base) return;
       const guqinNo = panel.guqinNo;
-      const updated = [panel, base].map((b) => ({ ...b, guqinNo }));
-      for (const board of updated) {
-        await db.boards.put(toPlain(board));
+      const deviceId = await getDeviceId();
+      const updated = [panel, base].map((b) => {
+        const next: WoodBoard = { ...b, guqinNo };
+        const summary = diffSummary('boards', b as unknown as Record<string, unknown>, next as unknown as Record<string, unknown>)
+          ?? b.summary
+          ?? '配对绑定';
+        const rev = stampChange(next, b, summary, deviceId);
+        return { row: next, rev, summary };
+      });
+      for (const { row, rev, summary } of updated) {
+        await db.boards.put(toPlain(row));
+        await recordChange({ stage: 'boards', id: row.id, guqinNo, rev, summary, deviceId });
       }
-      this.boards = this.boards.map((b) => updated.find((u) => u.id === b.id) ?? b);
+      this.boards = this.boards.map((b) => {
+        const hit = updated.find((u) => u.row.id === b.id);
+        return hit ? normalizeSyncRow('boards', hit.row) : b;
+      });
     },
   },
 });

@@ -1,8 +1,9 @@
 import { defineStore } from 'pinia';
-import { db } from '../utils/db';
+import { db, getDeviceId } from '../utils/db';
 import { uid } from '../utils/id';
 import { toPlain } from '../utils/plain';
 import { cumulativeThickness, nextSeq, sortLayers } from '../utils/layer';
+import { createSummary, diffSummary, normalizeSyncRow, recordChange, stampChange } from '../utils/sync';
 import type { LacquerLayer } from '../types/lacquer-layer';
 
 export interface LacquerInput {
@@ -45,13 +46,15 @@ export const useLacquerStore = defineStore('lacquer', {
 
   actions: {
     async hydrate() {
-      this.layers = await db.lacquers.toArray();
+      const rows = await db.lacquers.toArray();
+      this.layers = rows.map((r) => normalizeSyncRow('lacquers', r));
       this.hydrated = true;
     },
 
     /** 追加一遍：遍次自动 +1，并重算该琴累计厚度 */
     async appendLayer(input: LacquerInput): Promise<LacquerLayer> {
       const siblings = this.layers.filter((l) => l.guqinNo === input.guqinNo);
+      const deviceId = await getDeviceId();
       const layer: LacquerLayer = {
         id: uid('layer'),
         guqinNo: input.guqinNo.trim(),
@@ -66,7 +69,10 @@ export const useLacquerStore = defineStore('lacquer', {
         operator: input.operator.trim(),
         remark: input.remark?.trim() || undefined,
       };
+      const summary = createSummary('lacquers', layer as unknown as Record<string, unknown>);
+      const rev = stampChange(layer, undefined, summary, deviceId);
       const next = [...siblings, layer];
+      // 仅新遍次带变更摘要；旧遍次只回写派生的累计厚度，不产生新修订
       const withTotals = next.map((item) => ({
         ...item,
         totalThickness: cumulativeThickness(next, item.seq),
@@ -74,21 +80,31 @@ export const useLacquerStore = defineStore('lacquer', {
       for (const item of withTotals) {
         await db.lacquers.put(toPlain(item));
       }
+      await recordChange({ stage: 'lacquers', id: layer.id, guqinNo: layer.guqinNo, rev, summary, deviceId });
       const others = this.layers.filter((l) => l.guqinNo !== input.guqinNo);
-      this.layers = [...others, ...withTotals];
+      this.layers = [...others, ...withTotals.map((w) => normalizeSyncRow('lacquers', w))];
       return withTotals.find((item) => item.id === layer.id)!;
     },
 
     async updateLayer(id: string, patch: Partial<LacquerInput>) {
       const current = this.layers.find((l) => l.id === id);
       if (!current) return;
+      const deviceId = await getDeviceId();
       const next: LacquerLayer = { ...current, ...patch };
+      const summary = diffSummary('lacquers', current as unknown as Record<string, unknown>, next as unknown as Record<string, unknown>)
+        ?? current.summary
+        ?? '保存（内容无变化）';
+      const rev = stampChange(next, current, summary, deviceId);
       const siblings = this.layers.filter((l) => l.guqinNo === next.guqinNo).map((l) => (l.id === id ? next : l));
       const withTotals = siblings.map((item) => ({ ...item, totalThickness: cumulativeThickness(siblings, item.seq) }));
       for (const item of withTotals) {
         await db.lacquers.put(toPlain(item));
       }
-      this.layers = this.layers.map((l) => withTotals.find((w) => w.id === l.id) ?? l);
+      await recordChange({ stage: 'lacquers', id, guqinNo: next.guqinNo, rev, summary, deviceId });
+      this.layers = this.layers.map((l) => {
+        const hit = withTotals.find((w) => w.id === l.id);
+        return hit ? normalizeSyncRow('lacquers', hit) : l;
+      });
     },
 
     async removeLayer(id: string) {

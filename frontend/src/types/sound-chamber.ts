@@ -1,3 +1,5 @@
+import type { SyncMeta } from './sync';
+
 /** 天地柱位置 */
 export type PostPos = '天柱偏左' | '天柱中' | '天柱偏右' | '未定';
 
@@ -24,6 +26,12 @@ export interface SoundChamber {
   carver: string;
   /** 备注 */
   remark?: string;
+  /** 离线合并同步元信息（旧备份可能缺失） */
+  rev?: SyncMeta['rev'];
+  updatedAt?: SyncMeta['updatedAt'];
+  summary?: SyncMeta['summary'];
+  deviceId?: SyncMeta['deviceId'];
+  demo?: SyncMeta['demo'];
 }
 
 export const POST_POSITIONS: PostPos[] = ['天柱偏左', '天柱中', '天柱偏右', '未定'];

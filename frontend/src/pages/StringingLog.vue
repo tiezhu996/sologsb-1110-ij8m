@@ -196,6 +196,9 @@ async function remove(stringing: Stringing) {
           <template #default="scope">{{ formatDate(scope.row.strungAt) }}</template>
         </el-table-column>
         <el-table-column prop="operator" label="上弦人" width="90" />
+        <el-table-column label="最近变更摘要" min-width="200" show-overflow-tooltip>
+          <template #default="scope">{{ scope.row.summary || '—' }}</template>
+        </el-table-column>
         <el-table-column label="版本" width="80">
           <template #default="scope">{{ scope.row.noteVersions.length }} 个</template>
         </el-table-column>

@@ -1,3 +1,5 @@
+import type { SyncMeta } from './sync';
+
 /** 弦材质 */
 export type StringType = '丝弦' | '钢弦';
 
@@ -41,6 +43,12 @@ export interface Stringing {
   operator: string;
   /** 历次评语版本（倒序，最新在前） */
   noteVersions: ToneVersion[];
+  /** 离线合并同步元信息（旧备份可能缺失） */
+  rev?: SyncMeta['rev'];
+  updatedAt?: SyncMeta['updatedAt'];
+  summary?: SyncMeta['summary'];
+  deviceId?: SyncMeta['deviceId'];
+  demo?: SyncMeta['demo'];
 }
 
 /** 三段评语 + 九德的编辑草稿 */

@@ -23,3 +23,9 @@ body {
   color: #4a3728;
   font-weight: 600;
 }
+
+/* 四工序台账中的「最近变更摘要」列 */
+.summary-cell {
+  color: #7a6a58;
+  font-size: 12px;
+}

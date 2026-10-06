@@ -1,7 +1,8 @@
 import { defineStore } from 'pinia';
-import { db } from '../utils/db';
+import { db, getDeviceId } from '../utils/db';
 import { uid } from '../utils/id';
 import { toPlain } from '../utils/plain';
+import { createSummary, diffSummary, normalizeSyncRow, recordChange, stampChange } from '../utils/sync';
 import type { StringDefect, StringType, Stringing, ToneVersion } from '../types/stringing';
 
 export interface StringingInput {
@@ -53,11 +54,13 @@ export const useStringingStore = defineStore('stringing', {
 
   actions: {
     async hydrate() {
-      this.stringings = await db.stringings.orderBy('strungAt').reverse().toArray();
+      const rows = await db.stringings.orderBy('strungAt').reverse().toArray();
+      this.stringings = rows.map((r) => normalizeSyncRow('stringings', r));
       this.hydrated = true;
     },
 
     async addStringing(input: StringingInput): Promise<Stringing> {
+      const deviceId = await getDeviceId();
       const stringing: Stringing = {
         id: uid('stringing'),
         guqinNo: input.guqinNo.trim(),
@@ -73,8 +76,11 @@ export const useStringingStore = defineStore('stringing', {
         operator: input.operator.trim(),
         noteVersions: [],
       };
+      const summary = createSummary('stringings', stringing as unknown as Record<string, unknown>);
+      const rev = stampChange(stringing, undefined, summary, deviceId);
       await db.stringings.put(toPlain(stringing));
-      this.stringings = [stringing, ...this.stringings];
+      await recordChange({ stage: 'stringings', id: stringing.id, guqinNo: stringing.guqinNo, rev, summary, deviceId });
+      this.stringings = [normalizeSyncRow('stringings', stringing), ...this.stringings];
       return stringing;
     },
 
@@ -82,6 +88,7 @@ export const useStringingStore = defineStore('stringing', {
     async updateStringing(id: string, patch: Partial<StringingInput>) {
       const current = this.stringings.find((s) => s.id === id);
       if (!current) return;
+      const deviceId = await getDeviceId();
       const notesChanged =
         (patch.sanNote !== undefined && patch.sanNote.trim() !== current.sanNote) ||
         (patch.anNote !== undefined && patch.anNote.trim() !== current.anNote) ||
@@ -116,7 +123,12 @@ export const useStringingStore = defineStore('stringing', {
         operator: patch.operator?.trim() ?? current.operator,
         noteVersions: versions,
       };
+      const summary = diffSummary('stringings', current as unknown as Record<string, unknown>, next as unknown as Record<string, unknown>)
+        ?? current.summary
+        ?? '保存（内容无变化）';
+      const rev = stampChange(next, current, summary, deviceId);
       await db.stringings.put(toPlain(next));
+      await recordChange({ stage: 'stringings', id, guqinNo: next.guqinNo, rev, summary, deviceId });
       this.stringings = this.stringings.map((s) => (s.id === id ? next : s));
     },
 

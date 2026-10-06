@@ -152,6 +152,9 @@ async function remove(chamber: SoundChamber) {
             <template #default="scope">{{ formatDate(scope.row.carvedAt) }}</template>
           </el-table-column>
           <el-table-column prop="carver" label="掏膛人" width="90" />
+          <el-table-column label="最近变更摘要" min-width="200" show-overflow-tooltip>
+            <template #default="scope">{{ scope.row.summary || '—' }}</template>
+          </el-table-column>
           <el-table-column prop="remark" label="备注" min-width="140" />
           <el-table-column label="操作" width="150" fixed="right">
             <template #default="scope">
