@@ -24,6 +24,8 @@ export interface SoundChamber {
   carver: string;
   /** 备注 */
   remark?: string;
+  /** 演示样例标记：合并导入时正式记录不会被带此标记的样例改写 */
+  isDemo?: boolean;
 }
 
 export const POST_POSITIONS: PostPos[] = ['天柱偏左', '天柱中', '天柱偏右', '未定'];

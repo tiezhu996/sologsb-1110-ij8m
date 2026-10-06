@@ -23,6 +23,8 @@ export interface LacquerLayer {
   operator: string;
   /** 备注 */
   remark?: string;
+  /** 演示样例标记：合并导入时正式记录不会被带此标记的样例改写 */
+  isDemo?: boolean;
 }
 
 /** 灰胎阶段常用配比 */

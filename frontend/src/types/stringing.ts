@@ -41,6 +41,8 @@ export interface Stringing {
   operator: string;
   /** 历次评语版本（倒序，最新在前） */
   noteVersions: ToneVersion[];
+  /** 演示样例标记：合并导入时正式记录不会被带此标记的样例改写 */
+  isDemo?: boolean;
 }
 
 /** 三段评语 + 九德的编辑草稿 */

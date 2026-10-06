@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",
-    "preview": "vite preview --port 21810"
+    "preview": "vite preview --port 21810",
+    "test:merge": "esbuild test/merge-plan.test.ts --bundle --platform=node --format=esm --outfile=test/.tmp-plan.mjs --log-level=warning && node test/.tmp-plan.mjs && esbuild test/merge-e2e.test.ts --bundle --platform=node --format=esm --outfile=test/.tmp-e2e.mjs --log-level=warning && node test/.tmp-e2e.mjs; rc=$?; rm -f test/.tmp-plan.mjs test/.tmp-e2e.mjs; exit $rc"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.1",

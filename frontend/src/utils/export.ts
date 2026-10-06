@@ -1,31 +1,48 @@
 import { db, SCHEMA_VERSION } from './db';
+import { getDevice } from './device';
+import type { ChangeEntry, DeviceInfo } from '../types/changes';
 
 export interface BackupPayload {
   app: string;
   schemaVersion: number;
   exportedAt: string;
+  /** 导出设备（两台平板各自的对账身份） */
+  device?: DeviceInfo;
   boards: unknown[];
   chambers: unknown[];
   lacquers: unknown[];
   stringings: unknown[];
+  /**
+   * 变更摘要台账：四个工序阶段的增删改都在此留痕，随备份导出供按琴号对账。
+   * 旧版本备份没有此字段，合并时按行差异降级对账。
+   */
+  changes?: ChangeEntry[];
+  /** 本机历史（未选内容），仅作留档；对账只认 changes 与现行行 */
+  history?: unknown[];
 }
 
-/** 汇总全部本地表为 JSON 备份（schema 迁移前先导出） */
+/** 汇总全部本地表与变更摘要台账为 JSON 备份（回坊后按琴号对账合并） */
 export async function buildBackup(): Promise<BackupPayload> {
-  const [boards, chambers, lacquers, stringings] = await Promise.all([
+  const [boards, chambers, lacquers, stringings, changes, history, device] = await Promise.all([
     db.boards.toArray(),
     db.chambers.toArray(),
     db.lacquers.toArray(),
     db.stringings.toArray(),
+    db.changes.toArray(),
+    db.history.toArray(),
+    getDevice(),
   ]);
   return {
     app: 'gbguqin',
     schemaVersion: SCHEMA_VERSION,
     exportedAt: new Date().toISOString(),
+    device,
     boards,
     chambers,
     lacquers,
     stringings,
+    changes,
+    history,
   };
 }
 
@@ -55,27 +72,30 @@ export function downloadCsv<T extends Record<string, unknown>>(
   const body = rows
     .map((row) => columns.map((c) => `"${String(row[c.key] ?? '').replace(/"/g, '""')}"`).join(','))
     .join('\n');
-  downloadText(filename, `\ufeff${header}\n${body}`, 'text/csv');
+  downloadText(filename, `﻿${header}\n${body}`, 'text/csv');
 }
 
-/** 恢复 JSON 备份 */
-export async function importBackup(text: string): Promise<{ boards: number; chambers: number; lacquers: number; stringings: number }> {
-  const payload = JSON.parse(text) as Partial<BackupPayload>;
+/** 解析对端平板导出的备份文件；兼容没有变更摘要的旧备份 */
+export function parseBackup(text: string): BackupPayload {
+  let payload: Partial<BackupPayload>;
+  try {
+    payload = JSON.parse(text) as Partial<BackupPayload>;
+  } catch {
+    throw new Error('备份文件不是有效的 JSON');
+  }
   if (!payload || payload.app !== 'gbguqin') {
     throw new Error('备份文件格式不匹配（缺少 app=gbguqin 标记）');
   }
-  const counts = {
-    boards: payload.boards?.length ?? 0,
-    chambers: payload.chambers?.length ?? 0,
-    lacquers: payload.lacquers?.length ?? 0,
-    stringings: payload.stringings?.length ?? 0,
+  return {
+    app: 'gbguqin',
+    schemaVersion: typeof payload.schemaVersion === 'number' ? payload.schemaVersion : 0,
+    exportedAt: typeof payload.exportedAt === 'string' ? payload.exportedAt : new Date(0).toISOString(),
+    device: payload.device,
+    boards: Array.isArray(payload.boards) ? payload.boards : [],
+    chambers: Array.isArray(payload.chambers) ? payload.chambers : [],
+    lacquers: Array.isArray(payload.lacquers) ? payload.lacquers : [],
+    stringings: Array.isArray(payload.stringings) ? payload.stringings : [],
+    changes: Array.isArray(payload.changes) ? (payload.changes as ChangeEntry[]) : undefined,
+    history: Array.isArray(payload.history) ? payload.history : [],
   };
-  await db.transaction('rw', db.boards, db.chambers, db.lacquers, db.stringings, async () => {
-    await Promise.all([db.boards.clear(), db.chambers.clear(), db.lacquers.clear(), db.stringings.clear()]);
-    if (payload.boards?.length) await db.boards.bulkPut(payload.boards as never[]);
-    if (payload.chambers?.length) await db.chambers.bulkPut(payload.chambers as never[]);
-    if (payload.lacquers?.length) await db.lacquers.bulkPut(payload.lacquers as never[]);
-    if (payload.stringings?.length) await db.stringings.bulkPut(payload.stringings as never[]);
-  });
-  return counts;
 }

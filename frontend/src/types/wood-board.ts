@@ -33,6 +33,8 @@ export interface WoodBoard {
   receivedAt: string;
   /** 备注 */
   remark?: string;
+  /** 演示样例标记：合并导入时正式记录不会被带此标记的样例改写 */
+  isDemo?: boolean;
 }
 
 export const BOARD_PARTS: BoardPart[] = ['面板', '底板'];

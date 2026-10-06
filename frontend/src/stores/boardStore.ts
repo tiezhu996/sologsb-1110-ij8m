@@ -3,6 +3,7 @@ import { db } from '../utils/db';
 import { uid } from '../utils/id';
 import { toPlain } from '../utils/plain';
 import { pairBoards, boardUsable } from '../utils/wood';
+import { useChangeStore } from './changeStore';
 import type { BoardPart, BoardPair, WoodBoard, WoodDefect, WoodGrain, WoodSpecies } from '../types/wood-board';
 
 export interface BoardInput {
@@ -66,20 +67,33 @@ export const useBoardStore = defineStore('board', {
       };
       await db.boards.put(toPlain(board));
       this.boards = [board, ...this.boards];
+      await useChangeStore().log({ stage: 'board', recordId: board.id, action: 'create', snapshots: [board] });
       return board;
     },
 
     async updateBoard(id: string, patch: Partial<BoardInput>) {
       const current = this.boards.find((b) => b.id === id);
       if (!current) return;
-      const next: WoodBoard = { ...current, ...patch };
+      // 操作员改过的演示样例转为正式记录，避免日后合并时再被样例改写
+      const next: WoodBoard = { ...current, ...patch, ...(current.isDemo ? { isDemo: false } : {}) };
       await db.boards.put(toPlain(next));
       this.boards = this.boards.map((b) => (b.id === id ? next : b));
+      await useChangeStore().log({ stage: 'board', recordId: id, action: 'update', snapshots: [next] });
     },
 
     async removeBoard(id: string) {
+      const current = this.boards.find((b) => b.id === id);
       await db.boards.delete(id);
       this.boards = this.boards.filter((b) => b.id !== id);
+      if (current) {
+        await useChangeStore().log({
+          stage: 'board',
+          recordId: id,
+          action: 'delete',
+          guqinNo: current.guqinNo,
+          snapshots: [current],
+        });
+      }
     },
 
     /** 配对绑定：把某块板材与同琴号的另一部位板材绑定 */
@@ -93,6 +107,12 @@ export const useBoardStore = defineStore('board', {
         await db.boards.put(toPlain(board));
       }
       this.boards = this.boards.map((b) => updated.find((u) => u.id === b.id) ?? b);
+      for (const board of updated) {
+        const before = board.id === panel.id ? panel : base;
+        if (before.guqinNo !== board.guqinNo) {
+          await useChangeStore().log({ stage: 'board', recordId: board.id, action: 'update', snapshots: [board] });
+        }
+      }
     },
   },
 });

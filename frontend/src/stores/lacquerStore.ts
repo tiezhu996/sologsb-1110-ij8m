@@ -3,6 +3,7 @@ import { db } from '../utils/db';
 import { uid } from '../utils/id';
 import { toPlain } from '../utils/plain';
 import { cumulativeThickness, nextSeq, sortLayers } from '../utils/layer';
+import { useChangeStore } from './changeStore';
 import type { LacquerLayer } from '../types/lacquer-layer';
 
 export interface LacquerInput {
@@ -76,19 +77,34 @@ export const useLacquerStore = defineStore('lacquer', {
       }
       const others = this.layers.filter((l) => l.guqinNo !== input.guqinNo);
       this.layers = [...others, ...withTotals];
+      await useChangeStore().log({
+        stage: 'lacquer',
+        recordId: layer.id,
+        action: 'create',
+        snapshots: [withTotals.find((item) => item.id === layer.id)!],
+        operator: layer.operator,
+      });
       return withTotals.find((item) => item.id === layer.id)!;
     },
 
     async updateLayer(id: string, patch: Partial<LacquerInput>) {
       const current = this.layers.find((l) => l.id === id);
       if (!current) return;
-      const next: LacquerLayer = { ...current, ...patch };
+      // 操作员改过的演示样例转为正式记录
+      const next: LacquerLayer = { ...current, ...patch, ...(current.isDemo ? { isDemo: false } : {}) };
       const siblings = this.layers.filter((l) => l.guqinNo === next.guqinNo).map((l) => (l.id === id ? next : l));
       const withTotals = siblings.map((item) => ({ ...item, totalThickness: cumulativeThickness(siblings, item.seq) }));
       for (const item of withTotals) {
         await db.lacquers.put(toPlain(item));
       }
       this.layers = this.layers.map((l) => withTotals.find((w) => w.id === l.id) ?? l);
+      await useChangeStore().log({
+        stage: 'lacquer',
+        recordId: id,
+        action: 'update',
+        snapshots: [withTotals.find((w) => w.id === id)!],
+        operator: next.operator,
+      });
     },
 
     async removeLayer(id: string) {
@@ -105,6 +121,14 @@ export const useLacquerStore = defineStore('lacquer', {
         await db.lacquers.put(toPlain(item));
       }
       this.layers = rest.map((l) => withTotals.find((w) => w.id === l.id) ?? l);
+      await useChangeStore().log({
+        stage: 'lacquer',
+        recordId: id,
+        action: 'delete',
+        guqinNo: current.guqinNo,
+        snapshots: [current],
+        operator: current.operator,
+      });
     },
   },
 });

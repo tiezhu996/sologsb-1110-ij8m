@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { db } from '../utils/db';
 import { uid } from '../utils/id';
 import { toPlain } from '../utils/plain';
+import { useChangeStore } from './changeStore';
 import type { PostPos, SoundChamber, ThicknessMark } from '../types/sound-chamber';
 
 export interface ChamberInput {
@@ -83,17 +84,37 @@ export const useChamberStore = defineStore('chamber', {
         carvedAt: input.carvedAt ?? existed?.carvedAt ?? new Date().toISOString(),
         carver: input.carver.trim(),
         remark: input.remark?.trim() || undefined,
+        // 操作员改过的演示样例转为正式记录
+        ...(existed?.isDemo ? { isDemo: false } : {}),
       };
       await db.chambers.put(toPlain(chamber));
       this.chambers = existed
         ? this.chambers.map((c) => (c.id === chamber.id ? chamber : c))
         : [chamber, ...this.chambers];
+      await useChangeStore().log({
+        stage: 'chamber',
+        recordId: chamber.id,
+        action: existed ? 'update' : 'create',
+        snapshots: [chamber],
+        operator: chamber.carver,
+      });
       return chamber;
     },
 
     async removeChamber(id: string) {
+      const current = this.chambers.find((c) => c.id === id);
       await db.chambers.delete(id);
       this.chambers = this.chambers.filter((c) => c.id !== id);
+      if (current) {
+        await useChangeStore().log({
+          stage: 'chamber',
+          recordId: id,
+          action: 'delete',
+          guqinNo: current.guqinNo,
+          snapshots: [current],
+          operator: current.carver,
+        });
+      }
     },
   },
 });

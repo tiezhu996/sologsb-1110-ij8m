@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { db } from '../utils/db';
 import { uid } from '../utils/id';
 import { toPlain } from '../utils/plain';
+import { useChangeStore } from './changeStore';
 import type { StringDefect, StringType, Stringing, ToneVersion } from '../types/stringing';
 
 export interface StringingInput {
@@ -75,6 +76,13 @@ export const useStringingStore = defineStore('stringing', {
       };
       await db.stringings.put(toPlain(stringing));
       this.stringings = [stringing, ...this.stringings];
+      await useChangeStore().log({
+        stage: 'stringing',
+        recordId: stringing.id,
+        action: 'create',
+        snapshots: [stringing],
+        operator: stringing.operator,
+      });
       return stringing;
     },
 
@@ -115,14 +123,34 @@ export const useStringingStore = defineStore('stringing', {
         strungAt: patch.strungAt ?? current.strungAt,
         operator: patch.operator?.trim() ?? current.operator,
         noteVersions: versions,
+        // 操作员改过的演示样例转为正式记录
+        ...(current.isDemo ? { isDemo: false } : {}),
       };
       await db.stringings.put(toPlain(next));
       this.stringings = this.stringings.map((s) => (s.id === id ? next : s));
+      await useChangeStore().log({
+        stage: 'stringing',
+        recordId: id,
+        action: 'update',
+        snapshots: [next],
+        operator: next.operator,
+      });
     },
 
     async removeStringing(id: string) {
+      const current = this.stringings.find((s) => s.id === id);
       await db.stringings.delete(id);
       this.stringings = this.stringings.filter((s) => s.id !== id);
+      if (current) {
+        await useChangeStore().log({
+          stage: 'stringing',
+          recordId: id,
+          action: 'delete',
+          guqinNo: current.guqinNo,
+          snapshots: [current],
+          operator: current.operator,
+        });
+      }
     },
   },
 });
